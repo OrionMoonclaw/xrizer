@@ -153,6 +153,8 @@ impl<C: openxr_data::Compositor> Input<C> {
                 transform.orientation = rot.into();
             }
         }
+
+        *self.skeletal_tracking_level.write().unwrap() = vr::EVRSkeletalTrackingLevel::Full;
     }
 
     pub(super) fn get_estimated_bones(
@@ -247,6 +249,8 @@ impl<C: openxr_data::Compositor> Input<C> {
 
         // TODO: This is an arbitrary transform, and only appears to work as expected in parent space.
         transforms[Root as usize].position = Vec3::new(0.0, 0.0, -0.15).into();
+
+        *self.skeletal_tracking_level.write().unwrap() = vr::EVRSkeletalTrackingLevel::Estimated;
     }
 
     pub(super) fn get_reference_transforms(
