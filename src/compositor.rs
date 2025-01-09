@@ -816,7 +816,13 @@ impl GraphicsApi {
             Self::Vulkan(_) => {
                 assert_eq!(texture.eType, vr::ETextureType::Vulkan);
                 let vk_texture = unsafe { &*(texture.handle as *const vr::VRVulkanTextureData_t) };
-                VulkanData::get_swapchain_create_info(vk_texture, bounds, texture.eColorSpace)
+                let mut info =
+                    VulkanData::get_swapchain_create_info(vk_texture, bounds, texture.eColorSpace);
+
+                // Resonite likes to explode Vulkan with a 0x0 swapchain, do not let it.
+                info.width = info.width.max(1);
+                info.height = info.height.max(1);
+                info
             }
             #[cfg(test)]
             Self::Fake(f) => f.check_swapchain(texture, bounds),
