@@ -37,6 +37,7 @@ impl InteractionProfile for SimpleController {
         LegacyBindings {
             grip_pose: stp.leftright("input/grip/pose"),
             aim_pose: stp.leftright("input/aim/pose"),
+            palm_pose: stp.leftright("input/palm_ext/pose"),
             trigger: stp.leftright("input/select/click"),
             trigger_click: stp.leftright("input/select/click"),
             app_menu: stp.leftright("input/menu/click"),

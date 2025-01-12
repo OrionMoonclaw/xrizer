@@ -154,25 +154,52 @@ impl<C: openxr_data::Compositor> Input<C> {
         hand: Hand,
         transforms: &mut [vr::VRBoneTransform_t],
     ) {
-        let path = match hand {
-            Hand::Left => self.openxr.left_hand.subaction_path,
-            Hand::Right => self.openxr.right_hand.subaction_path,
+        let hand_state = self.get_estimated_finger_state(session_data, hand);
+
+        let (open, fist) = match hand {
+            Hand::Left => (&gen::left_hand::OPENHAND, &gen::left_hand::FIST),
+            Hand::Right => (&gen::right_hand::OPENHAND, &gen::right_hand::FIST),
         };
+
         let legacy = session_data.input_data.legacy_actions.get().unwrap();
-        let actions = &legacy.actions;
-        let trigger_state = actions.trigger.state(&session_data.session, path).unwrap();
-        let squeeze_state = actions.squeeze.state(&session_data.session, path).unwrap();
-        let (bind, squeeze, open) = match hand {
-            Hand::Left => (
-                &gen::left_hand::BINDPOSE,
-                &gen::left_hand::FIST,
-                &gen::left_hand::OPENHAND,
-            ),
-            Hand::Right => (
-                &gen::right_hand::BINDPOSE,
-                &gen::right_hand::FIST,
-                &gen::right_hand::OPENHAND,
-            ),
+        let display_time = self.openxr.display_time.get();
+        let palm = match hand {
+            Hand::Left => &legacy.left_spaces,
+            Hand::Right => &legacy.right_spaces,
+        }
+        .get_palm_pose(display_time);
+
+        let wrist = match palm {
+            Some(palm) => {
+                let position = palm.position;
+                let orientation = palm.orientation;
+                let mut affine = Affine3A::from_rotation_translation(
+                    Quat::from_xyzw(orientation.x, orientation.y, orientation.z, orientation.w),
+                    Vec3::from_array([position.x, position.y, position.z]),
+                );
+                affine *= Affine3A::from_quat(Quat::from_euler(
+                    glam::EulerRot::YZXEx,
+                    -FRAC_PI_2,
+                    FRAC_PI_2,
+                    0.0,
+                ));
+                affine *= match hand {
+                    Hand::Left => Affine3A::from_quat(Quat::from_euler(
+                        glam::EulerRot::YZXEx,
+                        FRAC_PI_2,
+                        PI,
+                        FRAC_PI_2,
+                    )),
+                    Hand::Right => Affine3A::from_quat(Quat::from_euler(
+                        glam::EulerRot::YZXEx,
+                        -FRAC_PI_2,
+                        0.0,
+                        -FRAC_PI_2,
+                    )),
+                };
+                affine.into()
+            }
+            None => open[Wrist as usize],
         };
 
         const fn constrain<'a, F, G>(f: F) -> F
@@ -184,8 +211,11 @@ impl<C: openxr_data::Compositor> Input<C> {
         }
         let bone_transform_map = constrain(|start_data: &[vr::VRBoneTransform_t], state| {
             move |idx| {
+                if idx == Wrist as usize {
+                    return bone_transform_to_glam(wrist);
+                }
                 let (start_pos, start_rot) = bone_transform_to_glam(start_data[idx]);
-                let (closed_pos, closed_rot) = bone_transform_to_glam(squeeze[idx]);
+                let (closed_pos, closed_rot) = bone_transform_to_glam(fist[idx]);
 
                 let pos = start_pos.lerp(closed_pos, state);
                 let rot = start_rot.slerp(closed_rot, state);
@@ -194,19 +224,13 @@ impl<C: openxr_data::Compositor> Input<C> {
             }
         });
 
-        // If squeezing and not pressing the trigger, index finger should be pointed straight
-        let index_start = if squeeze_state.current_state > 0.0 && trigger_state.current_state == 0.0
-        {
-            open
-        } else {
-            bind
-        };
-        let index_it = (IndexFinger0 as usize..=IndexFinger4 as usize)
-            .map(bone_transform_map(index_start, trigger_state.current_state));
+        let bone_it = (0..HandSkeletonBone::Count as usize).map(|idx| {
+            let bone = unsafe { std::mem::transmute::<usize, HandSkeletonBone>(idx) };
+            let curl_state = hand_state.get_bone_state(bone);
 
-        let rest_map = bone_transform_map(bind, squeeze_state.current_state);
-        let pre_it = (Root as usize..=Thumb3 as usize).map(rest_map);
-        let rest_it = (MiddleFinger0 as usize..Count as usize).map(rest_map);
+            let map_fn = bone_transform_map(open, curl_state);
+            map_fn(idx)
+        });
 
         // If we need to convert our iterator to model space, it will become a different type -
         // this is the only reason for this enum existing
@@ -214,7 +238,7 @@ impl<C: openxr_data::Compositor> Input<C> {
             Parent(T),
             Model(U),
         }
-        let mut full_it = TransformedIt::Parent(pre_it.chain(index_it).chain(rest_it));
+        let mut full_it = TransformedIt::Parent(bone_it);
 
         if space == vr::EVRSkeletalTransformSpace::Model {
             let TransformedIt::Parent(it) = full_it else {
@@ -236,9 +260,29 @@ impl<C: openxr_data::Compositor> Input<C> {
             TransformedIt::Parent(it) => convert(it, transforms),
             TransformedIt::Model(it) => convert(it, transforms),
         }
+    }
 
-        // TODO: This is an arbitrary transform, and only appears to work as expected in parent space.
-        transforms[Root as usize].position = Vec3::new(0.0, 0.0, -0.15).into();
+    fn get_estimated_finger_state(&self, session_data: &SessionData, hand: Hand) -> FingerState {
+        let path = match hand {
+            Hand::Left => self.openxr.left_hand.subaction_path,
+            Hand::Right => self.openxr.right_hand.subaction_path,
+        };
+        let legacy = session_data.input_data.legacy_actions.get().unwrap();
+        let actions = &legacy.actions;
+        let trigger_state = actions.trigger.state(&session_data.session, path).unwrap();
+        let squeeze_state = actions.squeeze.state(&session_data.session, path).unwrap();
+
+        FingerState {
+            index: trigger_state.current_state,
+            middle: squeeze_state.current_state,
+            ring: squeeze_state.current_state,
+            pinky: squeeze_state.current_state,
+            thumb: if squeeze_state.current_state > 0.5 {
+                0.0
+            } else {
+                1.0
+            },
+        }
     }
 }
 
@@ -330,6 +374,46 @@ static AUX_BONES: &[(HandSkeletonBone, xr::HandJoint)] = &[
     (AuxRingFinger, xr::HandJoint::RING_DISTAL),
     (AuxPinkyFinger, xr::HandJoint::LITTLE_DISTAL),
 ];
+
+pub struct FingerState {
+    pub index: f32,
+    pub middle: f32,
+    pub ring: f32,
+    pub pinky: f32,
+    pub thumb: f32,
+}
+
+impl FingerState {
+    pub fn get_bone_state(&self, bone: HandSkeletonBone) -> f32 {
+        match bone {
+            HandSkeletonBone::IndexFinger0
+            | HandSkeletonBone::IndexFinger1
+            | HandSkeletonBone::IndexFinger2
+            | HandSkeletonBone::IndexFinger3
+            | HandSkeletonBone::IndexFinger4 => self.index,
+            HandSkeletonBone::MiddleFinger0
+            | HandSkeletonBone::MiddleFinger1
+            | HandSkeletonBone::MiddleFinger2
+            | HandSkeletonBone::MiddleFinger3
+            | HandSkeletonBone::MiddleFinger4 => self.middle,
+            HandSkeletonBone::RingFinger0
+            | HandSkeletonBone::RingFinger1
+            | HandSkeletonBone::RingFinger2
+            | HandSkeletonBone::RingFinger3
+            | HandSkeletonBone::RingFinger4 => self.ring,
+            HandSkeletonBone::PinkyFinger0
+            | HandSkeletonBone::PinkyFinger1
+            | HandSkeletonBone::PinkyFinger2
+            | HandSkeletonBone::PinkyFinger3
+            | HandSkeletonBone::PinkyFinger4 => self.pinky,
+            HandSkeletonBone::Thumb0
+            | HandSkeletonBone::Thumb1
+            | HandSkeletonBone::Thumb2
+            | HandSkeletonBone::Thumb3 => self.thumb,
+            _ => 0.0, // Default to 0 for non-finger bones (e.g., wrist, root)
+        }
+    }
+}
 
 #[repr(usize)]
 #[derive(Copy, Clone)]

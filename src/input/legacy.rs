@@ -27,6 +27,7 @@ macro_rules! legacy_actions_and_bindings {
 legacy_actions_and_bindings! {
     grip_pose: xr::Action<xr::Posef>,
     aim_pose: xr::Action<xr::Posef>,
+    palm_pose: xr::Action<xr::Posef>,
     app_menu: xr::Action<bool>,
     trigger_click: xr::Action<bool>,
     trigger: xr::Action<f32>,
@@ -58,6 +59,9 @@ impl LegacyActionData {
         let aim_pose = set
             .create_action("aim-pose", "Aim Pose", &leftright)
             .unwrap();
+        let palm_pose = set
+            .create_action("palm-pose", "Palm Pose", &leftright)
+            .unwrap();
         let trigger_click = set
             .create_action("trigger-click", "Trigger Click", &leftright)
             .unwrap();
@@ -81,6 +85,9 @@ impl LegacyActionData {
                 aim: aim_pose
                     .create_space(session, hand_path, xr::Posef::IDENTITY)
                     .unwrap(),
+                palm: palm_pose
+                    .create_space(session, hand_path, xr::Posef::IDENTITY)
+                    .unwrap(),
                 raw: OnceLock::new(),
             }
         };
@@ -95,6 +102,7 @@ impl LegacyActionData {
             actions: LegacyActions {
                 grip_pose,
                 aim_pose,
+                palm_pose,
                 app_menu,
                 trigger_click,
                 trigger,
@@ -109,6 +117,7 @@ pub(super) struct HandSpaces {
     hand_path: xr::Path,
     grip: xr::Space,
     aim: xr::Space,
+    palm: xr::Space,
 
     /// Based on the controller jsons in SteamVR, the "raw" pose
     /// (which seems to be equivalent to the pose returned by WaitGetPoses)
@@ -169,6 +178,17 @@ impl HandSpaces {
             .unwrap_or_else(|_| unreachable!());
 
         self.raw.get()
+    }
+
+    pub fn get_palm_pose(&self, time: xr::Time) -> Option<xr::Posef> {
+        let palm_loc = self.aim.locate(&self.raw.get().unwrap(), time).unwrap();
+        if !palm_loc.location_flags.contains(
+            xr::SpaceLocationFlags::POSITION_VALID | xr::SpaceLocationFlags::ORIENTATION_VALID,
+        ) {
+            trace!("couldn't locate palm pose!");
+            return None;
+        }
+        Some(palm_loc.pose)
     }
 }
 

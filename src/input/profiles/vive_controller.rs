@@ -72,6 +72,7 @@ impl InteractionProfile for ViveWands {
         LegacyBindings {
             grip_pose: stp.leftright("input/grip/pose"),
             aim_pose: stp.leftright("input/aim/pose"),
+            palm_pose: stp.leftright("input/palm_ext/pose"),
             trigger: stp.leftright("input/trigger/value"),
             trigger_click: stp.leftright("input/trigger/click"),
             app_menu: stp.leftright("input/menu/click"),
