@@ -1,5 +1,5 @@
 use super::{
-    profiles::{knuckles::Knuckles, vive_controller::ViveWands},
+    profiles::{knuckles::Knuckles, simple_controller::SimpleController, vive_controller::ViveWands},
     ActionData, Input, InteractionProfile,
 };
 use crate::{
@@ -655,8 +655,8 @@ fn pose_action_no_restrict() {
     let poser = f.get_action_handle(c"/actions/set1/in/poser");
 
     f.load_actions(c"actions.json");
-    f.set_interaction_profile(&ViveWands, LeftHand);
-    f.set_interaction_profile(&ViveWands, RightHand);
+    f.set_interaction_profile(&SimpleController, LeftHand);
+    f.set_interaction_profile(&SimpleController, RightHand);
     let session = f.input.openxr.session_data.get().session.as_raw();
     let pose_left = xr::Posef {
         position: xr::Vector3f {
@@ -666,7 +666,7 @@ fn pose_action_no_restrict() {
         },
         orientation: xr::Quaternionf::IDENTITY,
     };
-    fakexr::set_aim(session, LeftHand, pose_left);
+    fakexr::set_grip(session, LeftHand, pose_left);
 
     let pose_right = xr::Posef {
         position: xr::Vector3f {
@@ -676,7 +676,7 @@ fn pose_action_no_restrict() {
         },
         orientation: xr::Quaternionf::IDENTITY,
     };
-    fakexr::set_aim(session, RightHand, pose_right);
+    fakexr::set_grip(session, RightHand, pose_right);
 
     f.sync(vr::VRActiveActionSet_t {
         ulActionSet: set1,
