@@ -1,7 +1,8 @@
+use glam::{EulerRot, Mat4, Quat, Vec3};
+
 use super::{InteractionProfile, PathTranslation, ProfileProperties, Property, StringToPath};
 use crate::input::legacy::LegacyBindings;
-use openxr as xr;
-use std::f32::consts::FRAC_PI_6;
+use crate::openxr_data::Hand;
 
 pub struct Knuckles;
 
@@ -94,15 +95,19 @@ impl InteractionProfile for Knuckles {
         }
     }
 
-    fn offset_grip_pose(&self, mut pose: xr::Posef) -> xr::Posef {
-        let rot = glam::Quat::from_rotation_x(-FRAC_PI_6);
-        pose.orientation = xr::Quaternionf {
-            x: rot.x,
-            y: rot.y,
-            z: rot.z,
-            w: rot.w,
-        };
-        pose
+    fn offset_grip_pose(&self, hand: Hand) -> Mat4 {
+        match hand {
+            Hand::Left => Mat4::from_rotation_translation(
+                Quat::from_euler(EulerRot::XYZ, 15.392, -2.071, 0.303),
+                Vec3::new(0.0, -0.015, 0.13),
+            )
+            .inverse(),
+            Hand::Right => Mat4::from_rotation_translation(
+                Quat::from_euler(EulerRot::XYZ, 15.392, 2.071, -0.303),
+                Vec3::new(0.0, -0.015, 0.13),
+            )
+            .inverse(),
+        }
     }
 }
 
