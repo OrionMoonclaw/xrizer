@@ -198,8 +198,6 @@ pub(super) struct HandSpaces {
     hand_path: xr::Path,
 
     /// Based on the controller jsons in SteamVR, the "raw" pose
-    /// (which seems to be equivalent to the pose returned by WaitGetPoses)
-    /// is actually the grip pose, but in the same position as the aim pose.
     /// Using this pose instead of the grip fixes strange controller rotation in
     /// I Expect You To Die 3.
     /// This is stored as a space so we can locate hand joints relative to it for skeletal data.
