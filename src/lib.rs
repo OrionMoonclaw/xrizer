@@ -2,7 +2,7 @@ mod applications;
 mod chaperone;
 mod clientcore;
 mod compositor;
-mod input;
+pub mod input;
 mod misc_unknown;
 mod openxr_data;
 mod overlay;

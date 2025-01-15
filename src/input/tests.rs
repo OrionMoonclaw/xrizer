@@ -1,5 +1,7 @@
 use super::{
-    profiles::{knuckles::Knuckles, simple_controller::SimpleController, vive_controller::ViveWands},
+    profiles::{
+        knuckles::Knuckles, simple_controller::SimpleController, vive_controller::ViveWands,
+    },
     ActionData, Input, InteractionProfile,
 };
 use crate::{

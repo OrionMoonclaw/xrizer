@@ -5,7 +5,11 @@ edition = "2021"
 resolver = "2"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name = "xrizer_skeletal_input"
+path = "src/input/skeletal_input/bin.rs"
 
 [features]
 tracing = ["dep:tracy-client", "openvr/tracing"]
@@ -41,6 +45,8 @@ egui = "0.28.1"
 egui-miniquad = "0.15.0"
 miniquad = "=0.4.0"
 webbrowser = "0.5.5"
+libc = "0.2.169"
+ipc-channel = "0.19.0"
 [build-dependencies]
 shaders = { path = "shaders" }
 

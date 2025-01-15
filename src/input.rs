@@ -3,11 +3,14 @@ mod custom_bindings;
 mod legacy;
 mod profiles;
 mod skeletal;
+pub mod skeletal_input;
 
 #[cfg(test)]
 mod tests;
 
 pub use profiles::{InteractionProfile, Profiles};
+use skeletal::FingerState;
+use skeletal_input::ipc::SkeletalInputIPC;
 
 use crate::{
     openxr_data::{self, Hand, OpenXrData, SessionData},
@@ -48,6 +51,8 @@ pub struct Input<C: openxr_data::Compositor> {
     cached_poses: Mutex<CachedSpaces>,
     legacy_packet_num: AtomicU32,
     skeletal_tracking_level: RwLock<vr::EVRSkeletalTrackingLevel>,
+    skeletal_input_ipc: Mutex<SkeletalInputIPC>,
+    estimated_finger_state: [Mutex<FingerState>; 2],
 }
 
 impl<C: openxr_data::Compositor> Input<C> {
@@ -67,6 +72,11 @@ impl<C: openxr_data::Compositor> Input<C> {
             cached_poses: Mutex::default(),
             legacy_packet_num: 0.into(),
             skeletal_tracking_level: RwLock::new(vr::EVRSkeletalTrackingLevel::Estimated),
+            skeletal_input_ipc: Mutex::new(SkeletalInputIPC::new()),
+            estimated_finger_state: [
+                Mutex::new(FingerState::new()),
+                Mutex::new(FingerState::new()),
+            ],
         }
     }
 
@@ -385,7 +395,7 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
                 transforms,
             )
         } else {
-            self.get_estimated_bones(&session_data, transform_space, *hand, transforms);
+            self.get_estimated_bones(transform_space, *hand, transforms);
         }
 
         vr::EVRInputError::None
