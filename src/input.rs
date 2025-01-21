@@ -20,15 +20,18 @@ use custom_bindings::{BoolActionData, FloatActionData};
 use legacy::LegacyActionData;
 use log::{debug, info, trace, warn};
 use openvr::{self as vr, space_relation_to_openvr_pose};
-use openxr as xr;
+use openxr::{
+    self as xr,
+    sys::{self, sync_actions, ActiveActionSetPrioritiesEXT, ActiveActionSetPriorityEXT},
+};
 use slotmap::{new_key_type, Key, KeyData, SecondaryMap, SlotMap};
-use std::collections::HashMap;
 use std::ffi::{c_char, CStr, CString};
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc, Mutex, OnceLock, RwLock,
 };
+use std::{collections::HashMap, ptr};
 
 new_key_type! {
     struct InputSourceKey;
@@ -804,10 +807,24 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
         };
 
         let set_map = self.set_map.read().unwrap();
+
+        // SteamVR uses an int32, OpenXR a uint32
+        // not sure if it is strictly necessary, but if there is a negative priority, we just shift everything over
+        let min_priority = active_sets.iter().map(|set| set.nPriority).min().unwrap();
+
+        // +1 to make everything override legacy input
+        let priority_offset = if min_priority < 0 {
+            -min_priority + 1
+        } else {
+            1
+        };
+
         let mut sync_sets = Vec::with_capacity(active_sets.len() + 1);
+        let mut priorities = Vec::with_capacity(active_sets.len() + 1);
         {
             tracy_span!("UpdateActionState generate active sets");
             for set in active_sets {
+                let priority = (set.nPriority + priority_offset) as u32;
                 let key = ActionSetKey::from(KeyData::from_ffi(set.ulActionSet));
                 let name = set_map.get(key);
                 let Some(set) = actions.sets.get(key) else {
@@ -815,17 +832,44 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
                     return vr::EVRInputError::InvalidHandle;
                 };
                 debug!("Activating set {}", name.unwrap());
-                sync_sets.push(set.into());
+                sync_sets.push(xr::ActiveActionSet::new(set));
+                priorities.push(ActiveActionSetPriorityEXT {
+                    action_set: set.as_raw(),
+                    priority_override: priority,
+                });
             }
 
             let legacy = data.input_data.legacy_actions.get().unwrap();
             sync_sets.push(xr::ActiveActionSet::new(&legacy.set));
+            priorities.push(ActiveActionSetPriorityEXT {
+                action_set: legacy.set.as_raw(),
+                priority_override: 0,
+            });
             self.legacy_packet_num.fetch_add(1, Ordering::Relaxed);
         }
 
         {
             tracy_span!("xrSyncActions");
-            data.session.sync_actions(&sync_sets).unwrap();
+            let info = sys::ActionsSyncInfo {
+                ty: sys::ActionsSyncInfo::TYPE,
+                next: &ActiveActionSetPrioritiesEXT {
+                    ty: sys::ActiveActionSetPrioritiesEXT::TYPE,
+                    next: ptr::null(),
+                    action_set_priority_count: priorities.len() as u32,
+                    action_set_priorities: priorities.as_ptr(),
+                } as *const _ as *const _,
+                count_active_action_sets: sync_sets.len() as u32,
+                active_action_sets: sync_sets.as_ptr() as _,
+            };
+            unsafe {
+                let result = sync_actions(data.session.as_raw(), &info);
+                if result.into_raw() >= 0 {
+                    Ok(result)
+                } else {
+                    Err(result)
+                }
+            }
+            .unwrap();
         }
 
         vr::EVRInputError::None
