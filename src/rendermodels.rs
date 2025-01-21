@@ -86,7 +86,9 @@ impl vr::IVRRenderModels006_Interface for RenderModels {
         todo!()
     }
     fn GetComponentCount(&self, _: *const std::os::raw::c_char) -> u32 {
-        todo!()
+        // VRC tries to get the component count if a render model name property is defined
+        crate::warn_unimplemented!("GetComponentCount");
+        0
     }
     fn GetRenderModelCount(&self) -> u32 {
         todo!()
