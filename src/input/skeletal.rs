@@ -6,7 +6,7 @@ use super::Input;
 use crate::openxr_data::{self, Hand, OpenXrData, SessionData};
 use glam::{Affine3A, Quat, Vec3};
 use openvr as vr;
-use openxr::{self as xr};
+use openxr::{self as xr, SpaceLocation};
 use paste::paste;
 use std::cell::RefCell;
 use std::f32::consts::{FRAC_PI_2, PI};
@@ -166,6 +166,28 @@ impl<C: openxr_data::Compositor> Input<C> {
         hand: Hand,
         transforms: &mut [vr::VRBoneTransform_t],
     ) {
+        let legacy = session_data.input_data.legacy_actions.get().unwrap();
+        let display_time = self.openxr.display_time.get();
+
+        let raw = match hand {
+            Hand::Left => &legacy.left_spaces,
+            Hand::Right => &legacy.right_spaces,
+        }
+        .try_get_or_init_raw(&self.openxr, session_data, &legacy.actions)
+        .expect("Failed to get raw space!");
+
+        let palm = match hand {
+            Hand::Left => &legacy.left_spaces,
+            Hand::Right => &legacy.right_spaces,
+        }
+        .try_get_or_init_palm(session_data, &legacy.actions)
+        .expect("Failed to get palm space!");
+
+        let palm_loc = palm.locate(raw, display_time).unwrap_or(SpaceLocation {
+            location_flags: xr::SpaceLocationFlags::EMPTY,
+            pose: xr::Posef::IDENTITY,
+        });
+
         let finger_state = self.get_finger_state(session_data, hand);
         let (open, fist) = match hand {
             Hand::Left => (&gen::left_hand::OPENHAND, &gen::left_hand::FIST),
@@ -186,6 +208,36 @@ impl<C: openxr_data::Compositor> Input<C> {
 
                 let pos = start_pos.lerp(closed_pos, state);
                 let rot = start_rot.slerp(closed_rot, state);
+
+                if idx == Wrist as usize
+                    && palm_loc.location_flags.contains(
+                        xr::SpaceLocationFlags::POSITION_VALID
+                            | xr::SpaceLocationFlags::ORIENTATION_VALID,
+                    )
+                {
+                    let position = palm_loc.pose.position;
+                    let orientation = palm_loc.pose.orientation;
+
+                    let pos_offset = match hand {
+                        Hand::Left => Vec3::from_array([-0.03404, 0.0365, 0.16472]),
+                        Hand::Right => Vec3::from_array([0.03404, 0.0365, 0.16472]),
+                    };
+                    let rot_offset = match hand {
+                        Hand::Left => {
+                            Quat::from_xyzw(-0.07860982, -0.9202778, 0.3792991, -0.055149868)
+                        }
+                        Hand::Right => {
+                            Quat::from_xyzw(-0.07860982, 0.9202778, -0.3792991, -0.055149868)
+                        }
+                    };
+                    return (
+                        Vec3::from_array([position.x, position.y, position.z]) + pos_offset,
+                        Quat::from_xyzw(orientation.x, orientation.y, orientation.z, orientation.w)
+                            + rot_offset,
+                    );
+                } else {
+                    crate::warn_once!("Could not locate palm_ext pose!");
+                }
 
                 (pos, rot)
             }

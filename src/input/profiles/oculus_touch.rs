@@ -61,6 +61,7 @@ impl InteractionProfile for Touch {
         LegacyBindings {
             grip_pose: stp.leftright("input/grip/pose"),
             aim_pose: stp.leftright("input/aim/pose"),
+            palm_pose: stp.leftright("input/palm_ext/pose"),
             trigger: stp.leftright("input/trigger/value"),
             trigger_click: stp.leftright("input/trigger/value"),
             app_menu: vec![], // TODO

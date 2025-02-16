@@ -1,6 +1,6 @@
 use crate::openxr_data::{Hand, OpenXrData, SessionData};
 use log::{debug, trace};
-use openxr as xr;
+use openxr::{self as xr};
 use std::sync::OnceLock;
 
 macro_rules! legacy_actions_and_bindings {
@@ -27,6 +27,7 @@ macro_rules! legacy_actions_and_bindings {
 legacy_actions_and_bindings! {
     grip_pose: xr::Action<xr::Posef>,
     aim_pose: xr::Action<xr::Posef>,
+    palm_pose: xr::Action<xr::Posef>,
     app_menu: xr::Action<bool>,
     trigger_click: xr::Action<bool>,
     trigger: xr::Action<f32>,
@@ -53,6 +54,9 @@ impl LegacyActionData {
         let aim_pose = set
             .create_action("aim-pose", "Aim Pose", &leftright)
             .unwrap();
+        let palm_pose = set
+            .create_action("palm-pose", "Palm Pose", &leftright)
+            .unwrap();
         let trigger_click = set
             .create_action("trigger-click", "Trigger Click", &leftright)
             .unwrap();
@@ -71,6 +75,7 @@ impl LegacyActionData {
                 hand,
                 hand_path,
                 raw: OnceLock::new(),
+                palm: OnceLock::new(),
             }
         };
 
@@ -84,6 +89,7 @@ impl LegacyActionData {
             actions: LegacyActions {
                 grip_pose,
                 aim_pose,
+                palm_pose,
                 app_menu,
                 trigger_click,
                 trigger,
@@ -104,6 +110,7 @@ pub(super) struct HandSpaces {
     /// I Expect You To Die 3.
     /// This is stored as a space so we can locate hand joints relative to it for skeletal data.
     raw: OnceLock<xr::Space>,
+    palm: OnceLock<xr::Space>,
 }
 
 impl HandSpaces {
@@ -142,5 +149,26 @@ impl HandSpaces {
             .unwrap_or_else(|_| unreachable!());
 
         self.raw.get()
+    }
+
+    pub fn try_get_or_init_palm(
+        &self,
+        session_data: &SessionData,
+        actions: &LegacyActions,
+    ) -> Option<&xr::Space> {
+        if let Some(palm) = self.palm.get() {
+            return Some(palm);
+        }
+
+        self.palm
+            .set(
+                actions
+                    .palm_pose
+                    .create_space(&session_data.session, self.hand_path, xr::Posef::IDENTITY)
+                    .unwrap(),
+            )
+            .unwrap_or_else(|_| unreachable!());
+
+        self.palm.get()
     }
 }
